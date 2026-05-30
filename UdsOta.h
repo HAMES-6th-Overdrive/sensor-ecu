@@ -35,11 +35,11 @@
 #endif
 
 #ifndef UDS_TRANSFER_DATA_SIZE
-#define UDS_TRANSFER_DATA_SIZE        62U
+#define UDS_TRANSFER_DATA_SIZE        32U
 #endif
 
 #ifndef UDS_MAX_BLOCK_LENGTH
-#define UDS_MAX_BLOCK_LENGTH          64U
+#define UDS_MAX_BLOCK_LENGTH          32U
 #endif
 
 #ifndef UDS_APP_START_ADDR
@@ -54,7 +54,7 @@
  * 현재 구현 기준:
  * - CAN FD Raw Frame 사용
  * - 1 frame payload 최대 64 byte
- * - TransferData 실제 firmware data는 최대 62 byte 단위
+ * - TransferData 실제 firmware data는 32 byte 단위
  * - 추후 ISO-TP/CAN TP 확장 가능
  */
 #define UDS_OTA_CANFD_PAYLOAD_SIZE    UDS_CANFD_MAX_PAYLOAD_SIZE
