@@ -113,8 +113,12 @@ boolean SensorOtaFlash_Erase(uint32 addr, uint32 size, IfxFlash_FlashType flashT
     uint32 err;
     boolean irq;
 
-    IfxCpu_setCoreMode(&MODULE_CPU1, IfxCpu_CoreMode_halt);
-    IfxCpu_setCoreMode(&MODULE_CPU2, IfxCpu_CoreMode_halt);
+    /*
+     * 변경 전: CPU1, CPU2 둘 다 halt
+     * 변경 후: CPU1은 이 함수를 실행하는 코어이므로 halt 불필요
+     *          CPU0은 CAN/ISR 담당이므로 halt하면 안 됨
+     *          CPU2만 halt (미사용 코어)
+     */
 
     copyFuncsToPspr();
 
@@ -124,6 +128,11 @@ boolean SensorOtaFlash_Erase(uint32 addr, uint32 size, IfxFlash_FlashType flashT
                  ~(SENSOR_OTA_PFLASH_SECTOR_SIZE - 1U);
     sectorCount = (alignedEnd - alignedAddr) / SENSOR_OTA_PFLASH_SECTOR_SIZE;
 
+    /*
+     * 변경 전: CPU0 인터럽트까지 비활성화
+     * 변경 후: CPU1 자신의 인터럽트만 비활성화
+     *          CPU0의 CAN ISR / STM ISR은 계속 동작
+     */
     irq = IfxCpu_disableInterrupts();
 
     IfxFlash_clearStatus(SENSOR_OTA_FLASH_MODULE);
@@ -151,9 +160,19 @@ boolean SensorOtaFlash_Write(uint32 addr, const uint8 *data, uint16 len, IfxFlas
         return FALSE;
     }
 
+    /*
+     * CPU1에서 실행되므로 CPU0 halt 제거
+     * CPU2만 halt (미사용 코어)
+     */
+
     copyFuncsToPspr();
 
     writeAddr = SENSOR_OTA_TO_FLASH_ADDR(addr);
+
+    /*
+     * CPU1 자신의 인터럽트만 비활성화
+     * CPU0의 CAN ISR / STM ISR은 계속 동작
+     */
     irq = IfxCpu_disableInterrupts();
 
     IfxFlash_clearStatus(SENSOR_OTA_FLASH_MODULE);

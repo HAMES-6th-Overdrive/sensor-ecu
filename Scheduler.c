@@ -72,6 +72,8 @@ volatile uint32 scheduler1msOverrunCount = 0U;
 volatile uint32 scheduler10msOverrunCount = 0U;
 volatile uint32 scheduler100msOverrunCount = 0U;
 
+volatile uint32_t g_speedTxCount = 0U;
+
 /*********************************************************************************************************************/
 /*------------------------------------------------Private prototypes-------------------------------------------------*/
 /*********************************************************************************************************************/
@@ -326,7 +328,7 @@ static void task_100ms(void)
     vehicleSpeed = HallSensor_getVehicleSpeed();
 
 #endif
-
+    g_speedTxCount++;  // OTA 중에도 증가하면 스케줄러 살아있음
     sendSpeedData100ms(vehicleSpeed);
 }
 
