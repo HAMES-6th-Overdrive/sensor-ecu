@@ -27,6 +27,7 @@
  *********************************************************************************************************************/
 
 #include "FlashOta.h"
+#include "OtaIpc.h"
 
 #include "IfxCpu.h"
 #include "IfxScuWdt.h"
@@ -74,32 +75,32 @@ typedef enum
 
 typedef struct
 {
-    uint32_t failReason;
+    uint32 failReason;
 
-    uint32_t blockIndex;
-    uint32_t offset;
-    uint32_t length;
-    uint32_t remaining;
-    uint32_t firmwareSize;
+    uint32 blockIndex;
+    uint32 offset;
+    uint32 length;
+    uint32 remaining;
+    uint32 firmwareSize;
 
-    uint32_t targetBaseNc;
-    uint32_t writeAddressNc;
-    uint32_t writeEndAddressNc;
+    uint32 targetBaseNc;
+    uint32 writeAddressNc;
+    uint32 writeEndAddressNc;
 
-    uint32_t eraseAddressNc;
-    uint32_t erasedUntilNc;
+    uint32 eraseAddressNc;
+    uint32 erasedUntilNc;
 
-    uint32_t flashType;
-    uint32_t dmuErr;
+    uint32 flashType;
+    uint32 dmuErr;
 
-    uint32_t verifyIndex;
-    uint32_t verifyOffset;
-    uint32_t verifyExpected;
-    uint32_t verifyActual;
+    uint32 verifyIndex;
+    uint32 verifyOffset;
+    uint32 verifyExpected;
+    uint32 verifyActual;
 
-    uint32_t writeOkCount;
-    uint32_t writeFailCount;
-    uint32_t eraseCount;
+    uint32 writeOkCount;
+    uint32 writeFailCount;
+    uint32 eraseCount;
 
 } FlashOta_WriteDebug_t;
 
@@ -139,9 +140,9 @@ static volatile uint8_t g_pendingResetType = 0U;
  * FlashOta_BeginDownload(targetAddress, firmwareSize)에서
  * Slot A 또는 Slot B 중 하나로 결정된다.
  */
-static uint32_t g_downloadTargetAddrC  = 0U;
-static uint32_t g_downloadTargetAddrNC = 0U;
-static uint32_t g_erasedUntilAddrNC = 0U;
+static uint32 g_downloadTargetAddrC  = 0U;
+static uint32 g_downloadTargetAddrNC = 0U;
+static uint32 g_erasedUntilAddrNC = 0U;
 
 /*
  * Sparse OTA metadata.
@@ -165,6 +166,12 @@ static boolean FlashOta_WriteDFlash8(uint32 addr, uint32 lo, uint32 hi);
 
 static boolean FlashOta_EraseInactiveSlot(uint32_t slotStartAddrNc);
 static uint32_t FlashOta_AlignUpSector(uint32_t addr);
+
+static boolean FlashOta_IpcErase(uint32_t addrNc, uint32_t size, IfxFlash_FlashType flashType);
+static boolean FlashOta_IpcWrite(uint32_t addrNc,
+                                  const uint8_t *data,
+                                  IfxFlash_FlashType flashType);
+
 
 /* ============================================================
    Public API
@@ -469,7 +476,7 @@ boolean FlashOta_WriteBlock(uint32_t blockIndex,
         g_flashOtaWriteDebug.erasedUntilNc = g_erasedUntilAddrNC;
         g_flashOtaWriteDebug.flashType = (uint32_t)flashType;
 
-        if (SensorOtaFlash_Erase(g_erasedUntilAddrNC,
+        if (FlashOta_IpcErase(g_erasedUntilAddrNC,
                                  FLASH_OTA_SECTOR_SIZE_BYTES,
                                  flashType) == FALSE)
         {
@@ -497,10 +504,9 @@ boolean FlashOta_WriteBlock(uint32_t blockIndex,
     flashType = getPFlashTypeFromAddress(targetAddrNc);
     g_flashOtaWriteDebug.flashType = (uint32_t)flashType;
 
-    if (SensorOtaFlash_Write(targetAddrNc,
-                             page,
-                             FLASH_OTA_PAGE_SIZE,
-                             flashType) == FALSE)
+    if (FlashOta_IpcWrite(targetAddrNc,
+                          page,
+                          flashType) == FALSE)
     {
         g_flashOtaWriteDebug.failReason = FLASH_OTA_FAIL_WRITE;
         g_flashOtaWriteDebug.dmuErr = MODULE_DMU.HF_ERRSR.U;
@@ -826,7 +832,7 @@ static boolean FlashOta_EraseInactiveSlot(uint32_t slotStartAddrNc)
     {
         flashType = getPFlashTypeFromAddress(addrNc);
 
-        if (SensorOtaFlash_Erase(addrNc,
+        if (FlashOta_IpcErase(addrNc,
                                  FLASH_OTA_SECTOR_SIZE_BYTES,
                                  flashType) == FALSE)
         {
@@ -966,4 +972,59 @@ boolean FlashOta_SetFinalFirmwareSize(uint32_t firmwareSize)
     g_flashOtaDebug.firmwareSize = firmwareSize;
 
     return TRUE;
+}
+
+/* FlashOta.c 수정 - SensorOtaFlash_Erase 직접 호출 부분 교체 */
+
+static boolean FlashOta_IpcErase(uint32_t addrNc, uint32_t size,
+                                  IfxFlash_FlashType flashType)
+{
+    uint32_t timeout = 50000000U;   // ~500ms 여유
+
+    /* 이전 완료 대기 */
+    while ((g_otaIpcReq.cmd != OTA_IPC_CMD_NONE) && (timeout-- > 0U)) { __nop(); }
+    if (timeout == 0U) { return FALSE; }
+
+    g_otaIpcRes.status   = OTA_IPC_STATUS_IDLE;
+    g_otaIpcReq.addrNc   = addrNc;
+    g_otaIpcReq.size     = size;
+    g_otaIpcReq.flashType = (uint32_t)flashType;
+    __dsync();
+    g_otaIpcReq.cmd      = OTA_IPC_CMD_ERASE;   /* 요청 발행 */
+
+    /* CPU1 완료 대기 (CPU0 인터럽트는 살아있음) */
+    timeout = 5000000U;  /* erase는 더 길게 */
+    while ((g_otaIpcRes.status == OTA_IPC_STATUS_IDLE ||
+            g_otaIpcRes.status == OTA_IPC_STATUS_BUSY) && (timeout-- > 0U))
+    {
+        /* CPU0 ISR은 계속 서비스됨 - 여기서 CAN TX/RX 정상 동작 */
+        __nop();
+    }
+
+    return (g_otaIpcRes.status == OTA_IPC_STATUS_OK) ? TRUE : FALSE;
+}
+
+static boolean FlashOta_IpcWrite(uint32_t addrNc, const uint8_t *data,
+                                  IfxFlash_FlashType flashType)
+{
+    uint32_t timeout = 100000U;
+
+    while ((g_otaIpcReq.cmd != OTA_IPC_CMD_NONE) && (timeout-- > 0U)) { __nop(); }
+    if (timeout == 0U) { return FALSE; }
+
+    g_otaIpcRes.status   = OTA_IPC_STATUS_IDLE;
+    g_otaIpcReq.addrNc   = addrNc;
+    g_otaIpcReq.flashType = (uint32_t)flashType;
+    memcpy((void *)g_otaIpcReq.data, data, 32U);
+    __dsync();
+    g_otaIpcReq.cmd      = OTA_IPC_CMD_WRITE;
+
+    timeout = 500000U;
+    while ((g_otaIpcRes.status == OTA_IPC_STATUS_IDLE ||
+            g_otaIpcRes.status == OTA_IPC_STATUS_BUSY) && (timeout-- > 0U))
+    {
+        __nop();
+    }
+
+    return (g_otaIpcRes.status == OTA_IPC_STATUS_OK) ? TRUE : FALSE;
 }
