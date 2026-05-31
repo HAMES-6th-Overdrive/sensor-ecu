@@ -236,8 +236,12 @@ enum {
 
 /* UDS OTA 설정 */
 #define UDS_CANFD_MAX_PAYLOAD_SIZE     64U
-#define UDS_TRANSFER_DATA_SIZE         32U
-#define UDS_MAX_BLOCK_LENGTH           32U
+#define UDS_TRANSFER_DATA_SIZE         62U
+#define UDS_MAX_BLOCK_LENGTH           64U
+
+#if ((UDS_TRANSFER_DATA_SIZE + 2U) > UDS_CANFD_MAX_PAYLOAD_SIZE)
+#error "UDS_TRANSFER_DATA_SIZE exceeds CAN FD payload after SID/BSC overhead"
+#endif
 
 /*
  * RequestDownload simplified format
@@ -332,7 +336,7 @@ typedef struct CAN_PACKED {
  *
  * P0      : RSID = 0x74
  * P1      : LengthFormatIdentifier style value
- * P2~P3   : MaxNumberOfBlockLength = 32
+ * P2~P3   : MaxNumberOfBlockLength = 64
  */
 typedef struct CAN_PACKED {
     UdsServiceId_t responseSid;
