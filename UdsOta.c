@@ -499,7 +499,7 @@ static void handleRequestDownload(const uint8_t *payload, uint8_t length)
     /*
      * Positive Response 0x74:
      * B1 = 0x20
-     * B2~B3 = MaxNumberOfBlockLength = 64
+     * B2~B3 = MaxNumberOfBlockLength = 32
      */
     responsePayload[0] = 0x20U;
     writeU16Le(&responsePayload[1], UDS_MAX_BLOCK_LENGTH);
