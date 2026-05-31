@@ -733,11 +733,16 @@ static void handleEcuReset(const uint8_t *payload, uint8_t length)
         return;
     }
 
+    if (g_udsOtaDebug.state != UDS_OTA_STATE_READY_TO_ACTIVATE)
+    {
+        sendNegativeResponse(UDS_SID_ECU_RESET,
+                             UDS_NRC_CONDITIONS_NOT_CORRECT);
+        return;
+    }
+
     resetType = payload[1];
 
-    if ((resetType != UDS_RESET_HARD_RESET) &&
-        (resetType != UDS_RESET_KEY_OFF_ON_RESET) &&
-        (resetType != UDS_RESET_SOFT_RESET))
+    if (resetType != UDS_RESET_JUMP_TO_APP)
     {
         sendNegativeResponse(UDS_SID_ECU_RESET,
                              UDS_NRC_REQUEST_OUT_OF_RANGE);
@@ -753,9 +758,8 @@ static void handleEcuReset(const uint8_t *payload, uint8_t length)
     g_udsOtaDebug.state = UDS_OTA_STATE_RESET_REQUESTED;
 
     /*
-     * ECUReset is accepted independently of the OTA activation state.
-     * FlashOta_Service() performs the delayed system reset so the positive
-     * response can leave the TX queue first.
+     * 현재 단계에서는 실제 jump하지 않는다.
+     * FlashOta_RequestJumpToApp()도 pending만 세우고 직접 jump하지 않는다.
      */
     (void)Target_EcuReset(resetType);
 }
